@@ -12,12 +12,41 @@ MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent),
     ui(new Ui::MainWindow),
     m_serialSettingsDialog(new SerialSettingsDialog),
-    m_mediaPlayer(new QMediaPlayer),
-    m_serial(new QSerialPort(this))
+    m_mediaPlayer(new QMediaPlayer(this)),
+    m_audioOutput(new QAudioOutput),
+    m_serial(new QSerialPort(this)),
+    m_apiServer(new QHttpServer(this))
 {
     ui->setupUi(this);
 
-    connect(m_mediaPlayer, &QMediaPlayer::volumeChanged, this, &MainWindow::volumeChanged);
+
+    m_mediaPlayer->setAudioOutput(m_audioOutput);
+
+    m_apiServer->route("/", []() {
+        qDebug() << "Return index.html";
+        return QHttpServerResponse::fromFile(":/assets/index.html");
+    });
+
+    m_apiServer->route("/play/", QHttpServerRequest::Method::Get, [&](int position) {
+        playSong(position);
+        return QHttpServerResponse(QHttpServerResponse::StatusCode::Accepted);
+    });
+
+    m_apiServer->route("/volume", QHttpServerRequest::Method::Get, [&]() {
+        return QHttpServerResponse(QString::number(ui->dial->value()), QHttpServerResponse::StatusCode::Ok);
+    });
+
+    m_apiServer->route("/volume/", QHttpServerRequest::Method::Get, [&](int volume) {
+        setVolume(volume);
+        return QHttpServerResponse(QHttpServerResponse::StatusCode::Accepted);
+    });
+
+    const auto port = m_apiServer->listen(QHostAddress::Any, 11948);
+    if (!port) {
+        qDebug() << "Server failed to listen on a port." << 11948;
+    }
+
+    connect(m_audioOutput, &QAudioOutput::volumeChanged, this, &MainWindow::volumeChanged);
     connect(ui->actionSettings, &QAction::triggered, m_serialSettingsDialog, &SerialSettingsDialog::show);
 
     connect(m_serial, &QSerialPort::readyRead, this, &MainWindow::readData);
@@ -36,6 +65,9 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(ui->dial, &QAbstractSlider::valueChanged, this, &MainWindow::volumeDialValueChanged);
 
+    m_audioOutput->setVolume(1.0);
+    ui->dial->setValue(100);
+
     readSettings();
 
     SerialSettingsDialog::Settings serialSettings = m_serialSettingsDialog->settings();
@@ -49,6 +81,7 @@ MainWindow::MainWindow(QWidget *parent)
     } else {
         ui->statusbar->showMessage(QString("failed to connect arduino %1[%2]").arg(serialSettings.name).arg(serialSettings.baudRate));
     }
+
 }
 
 MainWindow::~MainWindow()
@@ -92,27 +125,27 @@ void MainWindow::readData() {
             int volume = map(parts.at(1).toInt(), 0, 255, 0, 100);
             switch(songId) {
             case 0:
-                m_mediaPlayer->setVolume(volume);
+                setVolume(volume);
                 break;
             case 1:
                 playSong(0);
-                m_mediaPlayer->setVolume(volume);
+                setVolume(volume);
                 break;
             case 2:
                 playSong(1);
-                m_mediaPlayer->setVolume(volume);
+                setVolume(volume);
                 break;
             case 4:
                 playSong(2);
-                m_mediaPlayer->setVolume(volume);
+                setVolume(volume);
                 break;
             case 8:
                 playSong(3);
-                m_mediaPlayer->setVolume(volume);
+                setVolume(volume);
                 break;
             case 16:
                 playSong(4);
-                m_mediaPlayer->setVolume(volume);
+                setVolume(volume);
                 break;
             }
         }
@@ -124,16 +157,22 @@ void MainWindow::handleSerialError(QSerialPort::SerialPortError error) {
 
 }
 
-void MainWindow::volumeChanged(int value)
+void MainWindow::volumeChanged(float value)
 {
-    ui->dial->setValue(value);
+    ui->dial->setValue(value * 100);
+}
+
+void MainWindow::setVolume(int volume) {
+    if(volume < 0) volume = 0;
+    if(volume > 100) volume = 100;
+    m_audioOutput->setVolume(volume / 100.0);
 }
 
 void MainWindow::playSong(int pos) {
     switch(pos) {
     case 0:
         if(!ui->lineEdit_1->text().isEmpty()){
-            m_mediaPlayer->setMedia(QUrl::fromLocalFile(ui->lineEdit_1->text()));
+            m_mediaPlayer->setSource(QUrl::fromLocalFile(ui->lineEdit_1->text()));
             m_mediaPlayer->play();
 
             ui->pushButtonPlay1->setChecked(true);
@@ -145,7 +184,7 @@ void MainWindow::playSong(int pos) {
         break;
     case 1:
         if(!ui->lineEdit_2->text().isEmpty()){
-            m_mediaPlayer->setMedia(QUrl::fromLocalFile(ui->lineEdit_2->text()));
+            m_mediaPlayer->setSource(QUrl::fromLocalFile(ui->lineEdit_2->text()));
             m_mediaPlayer->play();
 
             ui->pushButtonPlay1->setChecked(false);
@@ -157,7 +196,7 @@ void MainWindow::playSong(int pos) {
         break;
     case 2:
         if(!ui->lineEdit_3->text().isEmpty()){
-            m_mediaPlayer->setMedia(QUrl::fromLocalFile(ui->lineEdit_3->text()));
+            m_mediaPlayer->setSource(QUrl::fromLocalFile(ui->lineEdit_3->text()));
             m_mediaPlayer->play();
 
             ui->pushButtonPlay1->setChecked(false);
@@ -169,7 +208,7 @@ void MainWindow::playSong(int pos) {
         break;
     case 3:
         if(!ui->lineEdit_4->text().isEmpty()){
-            m_mediaPlayer->setMedia(QUrl::fromLocalFile(ui->lineEdit_4->text()));
+            m_mediaPlayer->setSource(QUrl::fromLocalFile(ui->lineEdit_4->text()));
             m_mediaPlayer->play();
 
             ui->pushButtonPlay1->setChecked(false);
@@ -181,7 +220,7 @@ void MainWindow::playSong(int pos) {
         break;
     case 4:
         if(!ui->lineEdit_5->text().isEmpty()){
-            m_mediaPlayer->setMedia(QUrl::fromLocalFile(ui->lineEdit_5->text()));
+            m_mediaPlayer->setSource(QUrl::fromLocalFile(ui->lineEdit_5->text()));
             m_mediaPlayer->play();
 
             ui->pushButtonPlay1->setChecked(false);
@@ -200,7 +239,7 @@ void MainWindow::openSerialSettings() {
 
 void MainWindow::volumeDialValueChanged(int value)
 {
-    m_mediaPlayer->setVolume(value);
+    setVolume(value);
 }
 
 

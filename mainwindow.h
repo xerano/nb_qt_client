@@ -5,6 +5,7 @@
 #include <QMediaPlayer>
 #include <QAudioOutput>
 #include <QSerialPort>
+#include <QHttpServer>
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -27,7 +28,7 @@ private slots:
     void readData();
     void handleSerialError(QSerialPort::SerialPortError error);
 
-    void volumeChanged(int value);
+    void volumeChanged(float value);
     void volumeDialValueChanged(int value);
 
     void pushButtonSelect1Pressed();
@@ -45,12 +46,15 @@ private slots:
 private:
     Ui::MainWindow *ui;
     QMediaPlayer *m_mediaPlayer;
+    QAudioOutput *m_audioOutput;
     SerialSettingsDialog *m_serialSettingsDialog;
     QSerialPort *m_serial = nullptr;
+    QHttpServer *m_apiServer = nullptr;
     void playSong(int pos);
     void readSettings();
     void writeSettings();
     void openSerialSettings();
+    void setVolume(int volume);
     void closeEvent(QCloseEvent *event);
     long map(long x, long in_min, long in_max, long out_min, long out_max)
     {
